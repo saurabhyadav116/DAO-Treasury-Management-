@@ -53,7 +53,7 @@ contract DAOTreasury {
         admin = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
-        
+
         // Add admin as first member
         memberTokens[admin] = 1;
         totalTokens = 1;
@@ -61,9 +61,6 @@ contract DAOTreasury {
 
     /**
      * @dev Allow members to create a funding proposal
-     * @param _recipient Recipient of the funds
-     * @param _amount Amount of funds to transfer
-     * @param _description Description of the proposal
      */
     function createProposal(
         address payable _recipient,
@@ -71,9 +68,9 @@ contract DAOTreasury {
         string memory _description
     ) external onlyMember returns (uint256) {
         require(_amount <= address(this).balance, "Requested amount exceeds treasury balance");
-        
+
         uint256 proposalId = proposalCount++;
-        
+
         Proposal storage newProposal = proposals[proposalId];
         newProposal.id = proposalId;
         newProposal.proposer = msg.sender;
@@ -82,37 +79,34 @@ contract DAOTreasury {
         newProposal.description = _description;
         newProposal.deadline = block.timestamp + votingPeriod;
         newProposal.executed = false;
-        
+
         emit ProposalCreated(proposalId, msg.sender, _recipient, _amount, _description);
-        
+
         return proposalId;
     }
 
     /**
      * @dev Allow members to vote on proposals
-     * @param _proposalId The proposal ID
-     * @param _support Whether the vote is in support of the proposal
      */
     function castVote(uint256 _proposalId, bool _support) external onlyMember {
         Proposal storage proposal = proposals[_proposalId];
-        
+
         require(block.timestamp < proposal.deadline, "Voting period has ended");
         require(!proposal.executed, "Proposal has already been executed");
         require(!proposal.hasVoted[msg.sender], "Member has already voted");
-        
+
         proposal.hasVoted[msg.sender] = true;
-        
+
         uint256 voteWeight = memberTokens[msg.sender];
-        
+
         if (_support) {
             proposal.votesFor += voteWeight;
         } else {
             proposal.votesAgainst += voteWeight;
         }
-        
+
         emit VoteCast(_proposalId, msg.sender, _support, voteWeight);
-        
-        // Check if we can execute the proposal immediately
+
         if (canExecute(_proposalId)) {
             executeProposal(_proposalId);
         }
@@ -120,51 +114,45 @@ contract DAOTreasury {
 
     /**
      * @dev Execute a proposal if it has passed
-     * @param _proposalId The proposal ID
      */
     function executeProposal(uint256 _proposalId) public {
         require(canExecute(_proposalId), "Proposal cannot be executed");
-        
+
         Proposal storage proposal = proposals[_proposalId];
         proposal.executed = true;
-        
+
         (bool success, ) = proposal.recipient.call{value: proposal.amount}("");
         require(success, "Transfer failed");
-        
+
         emit ProposalExecuted(_proposalId);
     }
 
     /**
      * @dev Check if a proposal can be executed
-     * @param _proposalId The proposal ID
      */
     function canExecute(uint256 _proposalId) public view returns (bool) {
         Proposal storage proposal = proposals[_proposalId];
-        
+
         if (proposal.executed) {
             return false;
         }
-        
-        // Check if voting period has ended or quorum is reached
+
         bool hasEnded = block.timestamp >= proposal.deadline;
         uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
         bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
-        
+
         return hasEnded && quorumReached && proposal.votesFor > proposal.votesAgainst;
     }
 
     /**
      * @dev Allow admin to add new members or update existing ones
-     * @param _member Address of the member
-     * @param _tokens Number of voting tokens assigned to the member
      */
     function updateMember(address _member, uint256 _tokens) external onlyAdmin {
         uint256 currentTokens = memberTokens[_member];
         memberTokens[_member] = _tokens;
-        
-        // Update total tokens
+
         totalTokens = totalTokens - currentTokens + _tokens;
-        
+
         emit MemberAdded(_member, _tokens);
     }
 
@@ -177,7 +165,6 @@ contract DAOTreasury {
 
     /**
      * @dev Get basic information about a proposal
-     * @param _proposalId The proposal ID
      */
     function getProposalInfo(uint256 _proposalId) external view returns (
         address proposer,
@@ -200,5 +187,18 @@ contract DAOTreasury {
             proposal.executed,
             proposal.deadline
         );
+    }
+
+    /**
+     * @dev Allow admin to withdraw funds from the treasury
+     * @param _amount Amount to withdraw
+     * @param _recipient Address to receive the withdrawn funds
+     */
+    function adminWithdraw(uint256 _amount, address payable _recipient) external onlyAdmin {
+        require(_amount <= address(this).balance, "Insufficient treasury balance");
+        require(_recipient != address(0), "Invalid recipient address");
+
+        (bool success, ) = _recipient.call{value: _amount}("");
+        require(success, "Admin withdrawal failed");
     }
 }
