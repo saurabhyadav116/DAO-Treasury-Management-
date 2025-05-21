@@ -201,4 +201,11 @@ contract DAOTreasury {
         (bool success, ) = _recipient.call{value: _amount}("");
         require(success, "Admin withdrawal failed");
     }
+
+    /**
+     * @dev Check if a member has voted on a proposal
+     */
+    function getHasVoted(uint256 _proposalId, address _voter) external view returns (bool) {
+        return proposals[_proposalId].hasVoted[_voter];
+    }
 }
