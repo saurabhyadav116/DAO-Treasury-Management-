@@ -208,4 +208,28 @@ contract DAOTreasury {
     function getHasVoted(uint256 _proposalId, address _voter) external view returns (bool) {
         return proposals[_proposalId].hasVoted[_voter];
     }
+
+    /**
+     * @dev Returns a list of active proposal IDs
+     */
+    function getActiveProposals() external view returns (uint256[] memory) {
+        uint256[] memory temp = new uint256[](proposalCount);
+        uint256 activeCount = 0;
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage proposal = proposals[i];
+            if (!proposal.executed && block.timestamp < proposal.deadline) {
+                temp[activeCount] = i;
+                activeCount++;
+            }
+        }
+
+        // Create a trimmed array of active proposal IDs
+        uint256[] memory activeProposals = new uint256[](activeCount);
+        for (uint256 j = 0; j < activeCount; j++) {
+            activeProposals[j] = temp[j];
+        }
+
+        return activeProposals;
+    }
 }
