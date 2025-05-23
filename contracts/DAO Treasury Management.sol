@@ -6,7 +6,6 @@ pragma solidity ^0.8.17;
  * @dev A smart contract for managing DAO treasury with proposal and voting mechanisms
  */
 contract DAOTreasury {
-    // Structure for funding proposals
     struct Proposal {
         uint256 id;
         address proposer;
@@ -20,23 +19,20 @@ contract DAOTreasury {
         mapping(address => bool) hasVoted;
     }
 
-    // Contract state variables
     address public admin;
     mapping(uint256 => Proposal) public proposals;
     uint256 public proposalCount;
     mapping(address => uint256) public memberTokens;
     uint256 public totalTokens;
-    uint256 public quorum; // Percentage of tokens needed to pass a proposal (0-100)
-    uint256 public votingPeriod; // Time in seconds for voting on a proposal
+    uint256 public quorum;
+    uint256 public votingPeriod;
 
-    // Events
     event ProposalCreated(uint256 proposalId, address proposer, address recipient, uint256 amount, string description);
     event VoteCast(uint256 proposalId, address voter, bool support, uint256 weight);
     event ProposalExecuted(uint256 proposalId);
     event MemberAdded(address member, uint256 tokens);
     event FundsDeposited(address from, uint256 amount);
 
-    // Modifiers
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can perform this action");
         _;
@@ -47,21 +43,15 @@ contract DAOTreasury {
         _;
     }
 
-    // Constructor
     constructor(uint256 _quorum, uint256 _votingPeriod) {
         require(_quorum <= 100, "Quorum must be <= 100%");
         admin = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
-
-        // Add admin as first member
         memberTokens[admin] = 1;
         totalTokens = 1;
     }
 
-    /**
-     * @dev Allow members to create a funding proposal
-     */
     function createProposal(
         address payable _recipient,
         uint256 _amount,
@@ -85,9 +75,6 @@ contract DAOTreasury {
         return proposalId;
     }
 
-    /**
-     * @dev Allow members to vote on proposals
-     */
     function castVote(uint256 _proposalId, bool _support) external onlyMember {
         Proposal storage proposal = proposals[_proposalId];
 
@@ -112,9 +99,6 @@ contract DAOTreasury {
         }
     }
 
-    /**
-     * @dev Execute a proposal if it has passed
-     */
     function executeProposal(uint256 _proposalId) public {
         require(canExecute(_proposalId), "Proposal cannot be executed");
 
@@ -127,9 +111,6 @@ contract DAOTreasury {
         emit ProposalExecuted(_proposalId);
     }
 
-    /**
-     * @dev Check if a proposal can be executed
-     */
     function canExecute(uint256 _proposalId) public view returns (bool) {
         Proposal storage proposal = proposals[_proposalId];
 
@@ -144,9 +125,6 @@ contract DAOTreasury {
         return hasEnded && quorumReached && proposal.votesFor > proposal.votesAgainst;
     }
 
-    /**
-     * @dev Allow admin to add new members or update existing ones
-     */
     function updateMember(address _member, uint256 _tokens) external onlyAdmin {
         uint256 currentTokens = memberTokens[_member];
         memberTokens[_member] = _tokens;
@@ -156,16 +134,10 @@ contract DAOTreasury {
         emit MemberAdded(_member, _tokens);
     }
 
-    /**
-     * @dev Allow anyone to deposit funds into the treasury
-     */
     receive() external payable {
         emit FundsDeposited(msg.sender, msg.value);
     }
 
-    /**
-     * @dev Get basic information about a proposal
-     */
     function getProposalInfo(uint256 _proposalId) external view returns (
         address proposer,
         address recipient,
@@ -189,11 +161,6 @@ contract DAOTreasury {
         );
     }
 
-    /**
-     * @dev Allow admin to withdraw funds from the treasury
-     * @param _amount Amount to withdraw
-     * @param _recipient Address to receive the withdrawn funds
-     */
     function adminWithdraw(uint256 _amount, address payable _recipient) external onlyAdmin {
         require(_amount <= address(this).balance, "Insufficient treasury balance");
         require(_recipient != address(0), "Invalid recipient address");
@@ -202,16 +169,10 @@ contract DAOTreasury {
         require(success, "Admin withdrawal failed");
     }
 
-    /**
-     * @dev Check if a member has voted on a proposal
-     */
     function getHasVoted(uint256 _proposalId, address _voter) external view returns (bool) {
         return proposals[_proposalId].hasVoted[_voter];
     }
 
-    /**
-     * @dev Returns a list of active proposal IDs
-     */
     function getActiveProposals() external view returns (uint256[] memory) {
         uint256[] memory temp = new uint256[](proposalCount);
         uint256 activeCount = 0;
@@ -224,12 +185,32 @@ contract DAOTreasury {
             }
         }
 
-        // Create a trimmed array of active proposal IDs
         uint256[] memory activeProposals = new uint256[](activeCount);
         for (uint256 j = 0; j < activeCount; j++) {
             activeProposals[j] = temp[j];
         }
 
         return activeProposals;
+    }
+
+    /**
+     * @dev Returns the current result status of a proposal
+     * @return result 0 = Pending, 1 = Passed, 2 = Failed
+     */
+    function getProposalResult(uint256 _proposalId) external view returns (uint8 result) {
+        Proposal storage proposal = proposals[_proposalId];
+
+        if (block.timestamp < proposal.deadline) {
+            return 0; // Pending
+        }
+
+        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
+        bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
+
+        if (quorumReached && proposal.votesFor > proposal.votesAgainst) {
+            return 1; // Passed
+        } else {
+            return 2; // Failed
+        }
     }
 }
