@@ -15,6 +15,7 @@ contract DAOTreasury {
         uint256 votesFor;
         uint256 votesAgainst;
         bool executed;
+        bool canceled;
         uint256 deadline;
         mapping(address => bool) hasVoted;
     }
@@ -30,6 +31,7 @@ contract DAOTreasury {
     event ProposalCreated(uint256 proposalId, address proposer, address recipient, uint256 amount, string description);
     event VoteCast(uint256 proposalId, address voter, bool support, uint256 weight);
     event ProposalExecuted(uint256 proposalId);
+    event ProposalCanceled(uint256 proposalId);
     event MemberAdded(address member, uint256 tokens);
     event FundsDeposited(address from, uint256 amount);
 
@@ -69,6 +71,7 @@ contract DAOTreasury {
         newProposal.description = _description;
         newProposal.deadline = block.timestamp + votingPeriod;
         newProposal.executed = false;
+        newProposal.canceled = false;
 
         emit ProposalCreated(proposalId, msg.sender, _recipient, _amount, _description);
 
@@ -78,6 +81,7 @@ contract DAOTreasury {
     function castVote(uint256 _proposalId, bool _support) external onlyMember {
         Proposal storage proposal = proposals[_proposalId];
 
+        require(!proposal.canceled, "Proposal has been canceled");
         require(block.timestamp < proposal.deadline, "Voting period has ended");
         require(!proposal.executed, "Proposal has already been executed");
         require(!proposal.hasVoted[msg.sender], "Member has already voted");
@@ -114,7 +118,7 @@ contract DAOTreasury {
     function canExecute(uint256 _proposalId) public view returns (bool) {
         Proposal storage proposal = proposals[_proposalId];
 
-        if (proposal.executed) {
+        if (proposal.executed || proposal.canceled) {
             return false;
         }
 
@@ -146,7 +150,8 @@ contract DAOTreasury {
         uint256 votesFor,
         uint256 votesAgainst,
         bool executed,
-        uint256 deadline
+        uint256 deadline,
+        bool canceled
     ) {
         Proposal storage proposal = proposals[_proposalId];
         return (
@@ -157,7 +162,8 @@ contract DAOTreasury {
             proposal.votesFor,
             proposal.votesAgainst,
             proposal.executed,
-            proposal.deadline
+            proposal.deadline,
+            proposal.canceled
         );
     }
 
@@ -179,7 +185,7 @@ contract DAOTreasury {
 
         for (uint256 i = 0; i < proposalCount; i++) {
             Proposal storage proposal = proposals[i];
-            if (!proposal.executed && block.timestamp < proposal.deadline) {
+            if (!proposal.executed && !proposal.canceled && block.timestamp < proposal.deadline) {
                 temp[activeCount] = i;
                 activeCount++;
             }
@@ -195,10 +201,14 @@ contract DAOTreasury {
 
     /**
      * @dev Returns the current result status of a proposal
-     * @return result 0 = Pending, 1 = Passed, 2 = Failed
+     * @return result 0 = Pending, 1 = Passed, 2 = Failed, 3 = Canceled
      */
     function getProposalResult(uint256 _proposalId) external view returns (uint8 result) {
         Proposal storage proposal = proposals[_proposalId];
+
+        if (proposal.canceled) {
+            return 3; // Canceled
+        }
 
         if (block.timestamp < proposal.deadline) {
             return 0; // Pending
@@ -212,5 +222,19 @@ contract DAOTreasury {
         } else {
             return 2; // Failed
         }
+    }
+
+    /**
+     * @dev Allows the proposer or admin to cancel a proposal before execution
+     */
+    function cancelProposal(uint256 _proposalId) external {
+        Proposal storage proposal = proposals[_proposalId];
+        require(!proposal.executed, "Cannot cancel an already executed proposal");
+        require(!proposal.canceled, "Proposal already canceled");
+        require(msg.sender == proposal.proposer || msg.sender == admin, "Only proposer or admin can cancel");
+
+        proposal.canceled = true;
+
+        emit ProposalCanceled(_proposalId);
     }
 }
