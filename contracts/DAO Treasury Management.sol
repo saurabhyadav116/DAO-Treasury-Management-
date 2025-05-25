@@ -237,4 +237,11 @@ contract DAOTreasury {
 
         emit ProposalCanceled(_proposalId);
     }
+
+    /**
+     * @dev Returns the total number of proposals created
+     */
+    function getTotalProposalsCount() external view returns (uint256) {
+        return proposalCount;
+    }
 }
