@@ -199,10 +199,6 @@ contract DAOTreasury {
         return activeProposals;
     }
 
-    /**
-     * @dev Returns the current result status of a proposal
-     * @return result 0 = Pending, 1 = Passed, 2 = Failed, 3 = Canceled
-     */
     function getProposalResult(uint256 _proposalId) external view returns (uint8 result) {
         Proposal storage proposal = proposals[_proposalId];
 
@@ -224,9 +220,6 @@ contract DAOTreasury {
         }
     }
 
-    /**
-     * @dev Allows the proposer or admin to cancel a proposal before execution
-     */
     function cancelProposal(uint256 _proposalId) external {
         Proposal storage proposal = proposals[_proposalId];
         require(!proposal.executed, "Cannot cancel an already executed proposal");
@@ -238,10 +231,23 @@ contract DAOTreasury {
         emit ProposalCanceled(_proposalId);
     }
 
-    /**
-     * @dev Returns the total number of proposals created
-     */
     function getTotalProposalsCount() external view returns (uint256) {
         return proposalCount;
+    }
+
+    /**
+     * @dev Returns voting statistics across all proposals.
+     */
+    function getVotingStats() external view returns (uint256 total, uint256 totalVotesFor, uint256 totalVotesAgainst) {
+        uint256 _total = proposalCount;
+        uint256 _votesFor = 0;
+        uint256 _votesAgainst = 0;
+
+        for (uint256 i = 0; i < _total; i++) {
+            _votesFor += proposals[i].votesFor;
+            _votesAgainst += proposals[i].votesAgainst;
+        }
+
+        return (_total, _votesFor, _votesAgainst);
     }
 }
