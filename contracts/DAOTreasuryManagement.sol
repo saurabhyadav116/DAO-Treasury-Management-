@@ -235,9 +235,6 @@ contract DAOTreasury {
         return proposalCount;
     }
 
-    /**
-     * @dev Returns voting statistics across all proposals.
-     */
     function getVotingStats() external view returns (uint256 total, uint256 totalVotesFor, uint256 totalVotesAgainst) {
         uint256 _total = proposalCount;
         uint256 _votesFor = 0;
@@ -249,5 +246,12 @@ contract DAOTreasury {
         }
 
         return (_total, _votesFor, _votesAgainst);
+    }
+
+    /**
+     * @dev Returns the token weight (voting power) of a DAO member.
+     */
+    function getMemberVoteWeight(address _member) external view returns (uint256) {
+        return memberTokens[_member];
     }
 }
