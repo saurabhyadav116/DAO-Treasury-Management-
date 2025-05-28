@@ -248,10 +248,37 @@ contract DAOTreasury {
         return (_total, _votesFor, _votesAgainst);
     }
 
-    /**
-     * @dev Returns the token weight (voting power) of a DAO member.
-     */
     function getMemberVoteWeight(address _member) external view returns (uint256) {
         return memberTokens[_member];
+    }
+
+    /// @notice New Function: Returns a summary of all proposals
+    function getAllProposals() external view returns (
+        uint256[] memory ids,
+        address[] memory proposers,
+        address[] memory recipients,
+        uint256[] memory amounts,
+        string[] memory descriptions,
+        bool[] memory executed,
+        bool[] memory canceled
+    ) {
+        ids = new uint256[](proposalCount);
+        proposers = new address[](proposalCount);
+        recipients = new address[](proposalCount);
+        amounts = new uint256[](proposalCount);
+        descriptions = new string[](proposalCount);
+        executed = new bool[](proposalCount);
+        canceled = new bool[](proposalCount);
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage p = proposals[i];
+            ids[i] = p.id;
+            proposers[i] = p.proposer;
+            recipients[i] = p.recipient;
+            amounts[i] = p.amount;
+            descriptions[i] = p.description;
+            executed[i] = p.executed;
+            canceled[i] = p.canceled;
+        }
     }
 }
