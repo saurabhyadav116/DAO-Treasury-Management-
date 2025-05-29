@@ -281,4 +281,24 @@ contract DAOTreasury {
             canceled[i] = p.canceled;
         }
     }
+
+    /// @notice New Function: Returns proposal IDs submitted by a specific member
+    function getMemberProposals(address member) external view returns (uint256[] memory) {
+        uint256[] memory temp = new uint256[](proposalCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            if (proposals[i].proposer == member) {
+                temp[count] = i;
+                count++;
+            }
+        }
+
+        uint256[] memory memberProposals = new uint256[](count);
+        for (uint256 j = 0; j < count; j++) {
+            memberProposals[j] = temp[j];
+        }
+
+        return memberProposals;
+    }
 }
