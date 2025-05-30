@@ -252,7 +252,6 @@ contract DAOTreasury {
         return memberTokens[_member];
     }
 
-    /// @notice New Function: Returns a summary of all proposals
     function getAllProposals() external view returns (
         uint256[] memory ids,
         address[] memory proposers,
@@ -282,7 +281,6 @@ contract DAOTreasury {
         }
     }
 
-    /// @notice New Function: Returns proposal IDs submitted by a specific member
     function getMemberProposals(address member) external view returns (uint256[] memory) {
         uint256[] memory temp = new uint256[](proposalCount);
         uint256 count = 0;
@@ -300,5 +298,37 @@ contract DAOTreasury {
         }
 
         return memberProposals;
+    }
+
+    /// @notice New Function: Get top N proposals with most votesFor
+    function getTopVotedProposals(uint256 topN) external view returns (uint256[] memory topProposalIds) {
+        require(topN > 0, "topN must be greater than 0");
+
+        uint256[] memory ids = new uint256[](proposalCount);
+        uint256[] memory votes = new uint256[](proposalCount);
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            ids[i] = i;
+            votes[i] = proposals[i].votesFor;
+        }
+
+        // Simple bubble sort (not gas-efficient for large datasets, suitable for small DAOs)
+        for (uint256 i = 0; i < proposalCount; i++) {
+            for (uint256 j = i + 1; j < proposalCount; j++) {
+                if (votes[j] > votes[i]) {
+                    (votes[i], votes[j]) = (votes[j], votes[i]);
+                    (ids[i], ids[j]) = (ids[j], ids[i]);
+                }
+            }
+        }
+
+        uint256 resultCount = topN < proposalCount ? topN : proposalCount;
+        topProposalIds = new uint256[](resultCount);
+
+        for (uint256 k = 0; k < resultCount; k++) {
+            topProposalIds[k] = ids[k];
+        }
+
+        return topProposalIds;
     }
 }
