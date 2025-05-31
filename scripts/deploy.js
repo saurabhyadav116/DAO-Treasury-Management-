@@ -1,30 +1,33 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  console.log("Deploying DAO Treasury Management contract...");
+  console.log("🚀 Deploying DAO Treasury Management contract...");
 
   // Get the contract factory
   const DAOTreasury = await ethers.getContractFactory("DAOTreasury");
-  
-  // Set deployment parameters
-  const quorum = 51; // 51% quorum required for proposals to pass
-  const votingPeriod = 7 * 24 * 60 * 60; // 1 week voting period in seconds
-  
+
+  // Deployment configuration
+  const quorum = 51; // 51% quorum required
+  const votingPeriod = 7 * 24 * 60 * 60; // 1 week in seconds
+
   // Deploy the contract
   const daoTreasury = await DAOTreasury.deploy(quorum, votingPeriod);
-  
-  // Wait for deployment to finish
   await daoTreasury.deployed();
-  
-  console.log(`DAOTreasury deployed to: ${daoTreasury.address}`);
-  console.log(`Quorum set to: ${quorum}%`);
-  console.log(`Voting period: ${votingPeriod} seconds (${votingPeriod / (24 * 60 * 60)} days)`);
+
+  // Output deployment info
+  console.log("✅ DAOTreasury deployed successfully!");
+  console.log(`📜 Contract Address: ${daoTreasury.address}`);
+  console.log(`📊 Quorum: ${quorum}%`);
+  console.log(`⏳ Voting Period: ${votingPeriod} seconds (${votingPeriod / 86400} days)`);
+
+  // Optional: Check initial admin
+  const admin = await daoTreasury.admin();
+  console.log(`👑 Admin Address: ${admin}`);
 }
 
-// Execute the deployment
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error("Error during deployment:", error);
+    console.error("❌ Deployment error:", error);
     process.exit(1);
   });
