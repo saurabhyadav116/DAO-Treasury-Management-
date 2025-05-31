@@ -331,4 +331,24 @@ contract DAOTreasury {
 
         return topProposalIds;
     }
+
+    /// @notice New Function: Get all proposal IDs that a member has voted on
+    function getMemberVotingHistory(address member) external view returns (uint256[] memory) {
+        uint256[] memory temp = new uint256[](proposalCount);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            if (proposals[i].hasVoted[member]) {
+                temp[count] = i;
+                count++;
+            }
+        }
+
+        uint256[] memory history = new uint256[](count);
+        for (uint256 j = 0; j < count; j++) {
+            history[j] = temp[j];
+        }
+
+        return history;
+    }
 }
