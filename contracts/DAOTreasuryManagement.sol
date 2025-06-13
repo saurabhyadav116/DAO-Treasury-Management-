@@ -190,6 +190,30 @@ contract DAOTreasury {
         return proposals[_proposalId].hasVoted[_voter];
     }
 
+    /// ✅ New function added to check the status of a proposal
+    function getProposalStatus(uint256 _proposalId) public view validProposal(_proposalId) returns (ProposalStatus) {
+        Proposal storage proposal = proposals[_proposalId];
+
+        if (proposal.canceled) {
+            return ProposalStatus.Canceled;
+        }
+        if (proposal.executed) {
+            return ProposalStatus.Passed;
+        }
+        if (block.timestamp < proposal.deadline) {
+            return ProposalStatus.Pending;
+        }
+
+        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
+        bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
+
+        if (quorumReached && proposal.votesFor > proposal.votesAgainst) {
+            return ProposalStatus.Passed;
+        } else {
+            return ProposalStatus.Failed;
+        }
+    }
+
     // Private Functions
 
     function _updateMember(address _member, uint256 _tokens) private {
