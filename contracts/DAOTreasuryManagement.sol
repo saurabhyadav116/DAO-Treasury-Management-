@@ -28,7 +28,7 @@ contract DAOTreasury {
     address public immutable admin;
     uint256 public immutable votingPeriod;
     uint256 public immutable quorum;
-    
+
     uint256 public proposalCount;
     uint256 public totalTokens;
     mapping(uint256 => Proposal) public proposals;
@@ -63,7 +63,7 @@ contract DAOTreasury {
         admin = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
-        
+
         // Initialize admin as first member
         _updateMember(admin, 1);
     }
@@ -94,7 +94,7 @@ contract DAOTreasury {
 
     function castVote(uint256 _proposalId, bool _support) external onlyMember validProposal(_proposalId) {
         Proposal storage proposal = proposals[_proposalId];
-        
+
         require(!proposal.canceled, "Proposal canceled");
         require(block.timestamp < proposal.deadline, "Voting ended");
         require(!proposal.executed, "Proposal executed");
@@ -130,7 +130,7 @@ contract DAOTreasury {
 
     function cancelProposal(uint256 _proposalId) external validProposal(_proposalId) {
         Proposal storage proposal = proposals[_proposalId];
-        
+
         require(!proposal.executed, "Already executed");
         require(!proposal.canceled, "Already canceled");
         require(
@@ -190,7 +190,6 @@ contract DAOTreasury {
         return proposals[_proposalId].hasVoted[_voter];
     }
 
-    /// ✅ New function added to check the status of a proposal
     function getProposalStatus(uint256 _proposalId) public view validProposal(_proposalId) returns (ProposalStatus) {
         Proposal storage proposal = proposals[_proposalId];
 
@@ -211,6 +210,34 @@ contract DAOTreasury {
             return ProposalStatus.Passed;
         } else {
             return ProposalStatus.Failed;
+        }
+    }
+
+    /// ✅ New function to list all proposals with summary info
+    function getAllProposals() external view returns (
+        uint256[] memory ids,
+        address[] memory proposers,
+        address[] memory recipients,
+        uint256[] memory amounts,
+        ProposalStatus[] memory statuses,
+        uint256[] memory deadlines
+    ) {
+        uint256 count = proposalCount;
+        ids = new uint256[](count);
+        proposers = new address[](count);
+        recipients = new address[](count);
+        amounts = new uint256[](count);
+        statuses = new ProposalStatus[](count);
+        deadlines = new uint256[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            Proposal storage proposal = proposals[i];
+            ids[i] = proposal.id;
+            proposers[i] = proposal.proposer;
+            recipients[i] = proposal.recipient;
+            amounts[i] = proposal.amount;
+            statuses[i] = getProposalStatus(i);
+            deadlines[i] = proposal.deadline;
         }
     }
 
