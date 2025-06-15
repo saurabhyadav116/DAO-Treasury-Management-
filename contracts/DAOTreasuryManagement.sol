@@ -213,7 +213,6 @@ contract DAOTreasury {
         }
     }
 
-    /// ✅ New function to list all proposals with summary info
     function getAllProposals() external view returns (
         uint256[] memory ids,
         address[] memory proposers,
@@ -241,7 +240,26 @@ contract DAOTreasury {
         }
     }
 
-    // Private Functions
+    function withdrawUnallocatedFunds(address payable to, uint256 amount) external onlyAdmin {
+        require(to != address(0), "Invalid address");
+        require(amount <= getUnallocatedFunds(), "Amount exceeds unallocated");
+
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "Transfer failed");
+    }
+
+    function getUnallocatedFunds() public view returns (uint256) {
+        uint256 committed = 0;
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage p = proposals[i];
+            if (!p.executed && !p.canceled) {
+                committed += p.amount;
+            }
+        }
+
+        return address(this).balance - committed;
+    }
 
     function _updateMember(address _member, uint256 _tokens) private {
         uint256 currentTokens = memberTokens[_member];
@@ -250,7 +268,6 @@ contract DAOTreasury {
         emit MemberUpdated(_member, _tokens);
     }
 
-    // Fallback function
     receive() external payable {
         emit FundsDeposited(msg.sender, msg.value);
     }
