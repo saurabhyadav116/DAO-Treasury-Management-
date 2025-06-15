@@ -1,15 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-/**
- * @title DAOTreasury
- * @dev Core DAO treasury management with proposal and voting mechanisms
- */
 contract DAOTreasury {
-    // Enums
     enum ProposalStatus { Pending, Passed, Failed, Canceled }
 
-    // Structs
     struct Proposal {
         uint256 id;
         address proposer;
@@ -24,25 +18,23 @@ contract DAOTreasury {
         mapping(address => bool) hasVoted;
     }
 
-    // State Variables
     address public immutable admin;
     uint256 public immutable votingPeriod;
     uint256 public immutable quorum;
 
     uint256 public proposalCount;
     uint256 public totalTokens;
+
     mapping(uint256 => Proposal) public proposals;
     mapping(address => uint256) public memberTokens;
 
-    // Events
-    event ProposalCreated(uint256 proposalId, address proposer, address recipient, uint256 amount, string description);
-    event VoteCast(uint256 proposalId, address voter, bool support, uint256 weight);
-    event ProposalExecuted(uint256 proposalId);
-    event ProposalCanceled(uint256 proposalId);
-    event MemberUpdated(address member, uint256 tokens);
-    event FundsDeposited(address from, uint256 amount);
+    event ProposalCreated(uint256 indexed id, address indexed proposer, address indexed recipient, uint256 amount, string description);
+    event VoteCast(uint256 indexed proposalId, address indexed voter, bool support, uint256 weight);
+    event ProposalExecuted(uint256 indexed proposalId);
+    event ProposalCanceled(uint256 indexed proposalId);
+    event MemberUpdated(address indexed member, uint256 tokens);
+    event FundsDeposited(address indexed from, uint256 amount);
 
-    // Modifiers
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin");
         _;
@@ -59,169 +51,177 @@ contract DAOTreasury {
     }
 
     constructor(uint256 _quorum, uint256 _votingPeriod) {
-        require(_quorum <= 100, "Quorum <= 100%");
+        require(_quorum <= 100, "Quorum must be <= 100%");
         admin = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
 
-        // Initialize admin as first member
         _updateMember(admin, 1);
     }
-
-    // Core Functions
 
     function createProposal(
         address payable _recipient,
         uint256 _amount,
         string memory _description
     ) external onlyMember returns (uint256) {
-        require(_amount <= address(this).balance, "Amount exceeds balance");
+        require(_amount <= address(this).balance, "Insufficient balance");
         require(_recipient != address(0), "Invalid recipient");
 
-        uint256 proposalId = proposalCount++;
-        Proposal storage newProposal = proposals[proposalId];
+        uint256 id = proposalCount++;
+        Proposal storage p = proposals[id];
 
-        newProposal.id = proposalId;
-        newProposal.proposer = msg.sender;
-        newProposal.recipient = _recipient;
-        newProposal.amount = _amount;
-        newProposal.description = _description;
-        newProposal.deadline = block.timestamp + votingPeriod;
+        p.id = id;
+        p.proposer = msg.sender;
+        p.recipient = _recipient;
+        p.amount = _amount;
+        p.description = _description;
+        p.deadline = block.timestamp + votingPeriod;
 
-        emit ProposalCreated(proposalId, msg.sender, _recipient, _amount, _description);
-        return proposalId;
+        emit ProposalCreated(id, msg.sender, _recipient, _amount, _description);
+        return id;
     }
 
-    function castVote(uint256 _proposalId, bool _support) external onlyMember validProposal(_proposalId) {
-        Proposal storage proposal = proposals[_proposalId];
+    function castVote(uint256 proposalId, bool support)
+        external
+        onlyMember
+        validProposal(proposalId)
+    {
+        Proposal storage p = proposals[proposalId];
 
-        require(!proposal.canceled, "Proposal canceled");
-        require(block.timestamp < proposal.deadline, "Voting ended");
-        require(!proposal.executed, "Proposal executed");
-        require(!proposal.hasVoted[msg.sender], "Already voted");
+        require(!p.executed, "Already executed");
+        require(!p.canceled, "Proposal canceled");
+        require(block.timestamp < p.deadline, "Voting closed");
+        require(!p.hasVoted[msg.sender], "Already voted");
 
-        proposal.hasVoted[msg.sender] = true;
-        uint256 voteWeight = memberTokens[msg.sender];
+        p.hasVoted[msg.sender] = true;
+        uint256 weight = memberTokens[msg.sender];
 
-        if (_support) {
-            proposal.votesFor += voteWeight;
+        if (support) {
+            p.votesFor += weight;
         } else {
-            proposal.votesAgainst += voteWeight;
+            p.votesAgainst += weight;
         }
 
-        emit VoteCast(_proposalId, msg.sender, _support, voteWeight);
+        emit VoteCast(proposalId, msg.sender, support, weight);
 
-        if (canExecute(_proposalId)) {
-            executeProposal(_proposalId);
+        if (_canExecute(p)) {
+            _executeProposal(p);
         }
     }
 
-    function executeProposal(uint256 _proposalId) public validProposal(_proposalId) {
-        require(canExecute(_proposalId), "Cannot execute");
+    function executeProposal(uint256 proposalId) external validProposal(proposalId) {
+        Proposal storage p = proposals[proposalId];
+        require(_canExecute(p), "Cannot execute");
+        _executeProposal(p);
+    }
 
-        Proposal storage proposal = proposals[_proposalId];
-        proposal.executed = true;
+    function cancelProposal(uint256 proposalId) external validProposal(proposalId) {
+        Proposal storage p = proposals[proposalId];
 
-        (bool success, ) = proposal.recipient.call{value: proposal.amount}("");
+        require(!p.executed, "Already executed");
+        require(!p.canceled, "Already canceled");
+        require(msg.sender == p.proposer || msg.sender == admin, "Unauthorized");
+
+        p.canceled = true;
+        emit ProposalCanceled(proposalId);
+    }
+
+    function updateMember(address member, uint256 tokens) external onlyAdmin {
+        require(member != address(0), "Invalid address");
+        _updateMember(member, tokens);
+    }
+
+    function withdrawUnallocatedFunds(address payable to, uint256 amount) external onlyAdmin {
+        require(to != address(0), "Invalid address");
+        require(amount <= getUnallocatedFunds(), "Insufficient unallocated funds");
+
+        (bool success, ) = to.call{value: amount}("");
         require(success, "Transfer failed");
-
-        emit ProposalExecuted(_proposalId);
     }
 
-    function cancelProposal(uint256 _proposalId) external validProposal(_proposalId) {
-        Proposal storage proposal = proposals[_proposalId];
-
-        require(!proposal.executed, "Already executed");
-        require(!proposal.canceled, "Already canceled");
-        require(
-            msg.sender == proposal.proposer || msg.sender == admin,
-            "Only proposer/admin"
-        );
-
-        proposal.canceled = true;
-        emit ProposalCanceled(_proposalId);
-    }
-
-    function updateMember(address _member, uint256 _tokens) external onlyAdmin {
-        require(_member != address(0), "Invalid address");
-        _updateMember(_member, _tokens);
-    }
-
-    // Essential View Functions
-
-    function canExecute(uint256 _proposalId) public view validProposal(_proposalId) returns (bool) {
-        Proposal storage proposal = proposals[_proposalId];
-
-        if (proposal.executed || proposal.canceled) return false;
-        if (block.timestamp < proposal.deadline) return false;
-
-        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
-        bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
-
-        return quorumReached && proposal.votesFor > proposal.votesAgainst;
-    }
-
-    function getProposalInfo(uint256 _proposalId) public view validProposal(_proposalId) returns (
-        address proposer,
-        address recipient,
-        uint256 amount,
-        string memory description,
-        uint256 votesFor,
-        uint256 votesAgainst,
-        bool executed,
-        uint256 deadline,
-        bool canceled
-    ) {
-        Proposal storage proposal = proposals[_proposalId];
+    function getProposalInfo(uint256 proposalId)
+        external
+        view
+        validProposal(proposalId)
+        returns (
+            address proposer,
+            address recipient,
+            uint256 amount,
+            string memory description,
+            uint256 votesFor,
+            uint256 votesAgainst,
+            bool executed,
+            uint256 deadline,
+            bool canceled
+        )
+    {
+        Proposal storage p = proposals[proposalId];
         return (
-            proposal.proposer,
-            proposal.recipient,
-            proposal.amount,
-            proposal.description,
-            proposal.votesFor,
-            proposal.votesAgainst,
-            proposal.executed,
-            proposal.deadline,
-            proposal.canceled
+            p.proposer,
+            p.recipient,
+            p.amount,
+            p.description,
+            p.votesFor,
+            p.votesAgainst,
+            p.executed,
+            p.deadline,
+            p.canceled
         );
     }
 
-    function getHasVoted(uint256 _proposalId, address _voter) public view validProposal(_proposalId) returns (bool) {
-        return proposals[_proposalId].hasVoted[_voter];
+    function getHasVoted(uint256 proposalId, address voter)
+        external
+        view
+        validProposal(proposalId)
+        returns (bool)
+    {
+        return proposals[proposalId].hasVoted[voter];
     }
 
-    function getProposalStatus(uint256 _proposalId) public view validProposal(_proposalId) returns (ProposalStatus) {
-        Proposal storage proposal = proposals[_proposalId];
+    function getProposalStatus(uint256 proposalId)
+        public
+        view
+        validProposal(proposalId)
+        returns (ProposalStatus)
+    {
+        Proposal storage p = proposals[proposalId];
+        if (p.canceled) return ProposalStatus.Canceled;
+        if (p.executed) return ProposalStatus.Passed;
+        if (block.timestamp < p.deadline) return ProposalStatus.Pending;
 
-        if (proposal.canceled) {
-            return ProposalStatus.Canceled;
-        }
-        if (proposal.executed) {
-            return ProposalStatus.Passed;
-        }
-        if (block.timestamp < proposal.deadline) {
-            return ProposalStatus.Pending;
-        }
-
-        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
+        uint256 totalVotes = p.votesFor + p.votesAgainst;
         bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
 
-        if (quorumReached && proposal.votesFor > proposal.votesAgainst) {
+        if (quorumReached && p.votesFor > p.votesAgainst) {
             return ProposalStatus.Passed;
-        } else {
-            return ProposalStatus.Failed;
         }
+
+        return ProposalStatus.Failed;
     }
 
-    function getAllProposals() external view returns (
-        uint256[] memory ids,
-        address[] memory proposers,
-        address[] memory recipients,
-        uint256[] memory amounts,
-        ProposalStatus[] memory statuses,
-        uint256[] memory deadlines
-    ) {
+    function canExecute(uint256 proposalId)
+        external
+        view
+        validProposal(proposalId)
+        returns (bool)
+    {
+        return _canExecute(proposals[proposalId]);
+    }
+
+    function getAllProposals()
+        external
+        view
+        returns (
+            uint256[] memory ids,
+            address[] memory proposers,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            ProposalStatus[] memory statuses,
+            uint256[] memory deadlines
+        )
+    {
         uint256 count = proposalCount;
+
         ids = new uint256[](count);
         proposers = new address[](count);
         recipients = new address[](count);
@@ -230,26 +230,18 @@ contract DAOTreasury {
         deadlines = new uint256[](count);
 
         for (uint256 i = 0; i < count; i++) {
-            Proposal storage proposal = proposals[i];
-            ids[i] = proposal.id;
-            proposers[i] = proposal.proposer;
-            recipients[i] = proposal.recipient;
-            amounts[i] = proposal.amount;
+            Proposal storage p = proposals[i];
+            ids[i] = p.id;
+            proposers[i] = p.proposer;
+            recipients[i] = p.recipient;
+            amounts[i] = p.amount;
             statuses[i] = getProposalStatus(i);
-            deadlines[i] = proposal.deadline;
+            deadlines[i] = p.deadline;
         }
     }
 
-    function withdrawUnallocatedFunds(address payable to, uint256 amount) external onlyAdmin {
-        require(to != address(0), "Invalid address");
-        require(amount <= getUnallocatedFunds(), "Amount exceeds unallocated");
-
-        (bool success, ) = to.call{value: amount}("");
-        require(success, "Transfer failed");
-    }
-
     function getUnallocatedFunds() public view returns (uint256) {
-        uint256 committed = 0;
+        uint256 committed;
 
         for (uint256 i = 0; i < proposalCount; i++) {
             Proposal storage p = proposals[i];
@@ -261,11 +253,30 @@ contract DAOTreasury {
         return address(this).balance - committed;
     }
 
-    function _updateMember(address _member, uint256 _tokens) private {
-        uint256 currentTokens = memberTokens[_member];
-        memberTokens[_member] = _tokens;
-        totalTokens = totalTokens - currentTokens + _tokens;
-        emit MemberUpdated(_member, _tokens);
+    function _updateMember(address member, uint256 tokens) internal {
+        uint256 current = memberTokens[member];
+        memberTokens[member] = tokens;
+        totalTokens = totalTokens - current + tokens;
+
+        emit MemberUpdated(member, tokens);
+    }
+
+    function _canExecute(Proposal storage p) internal view returns (bool) {
+        if (p.executed || p.canceled || block.timestamp < p.deadline) return false;
+
+        uint256 totalVotes = p.votesFor + p.votesAgainst;
+        bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
+
+        return quorumReached && p.votesFor > p.votesAgainst;
+    }
+
+    function _executeProposal(Proposal storage p) internal {
+        p.executed = true;
+
+        (bool success, ) = p.recipient.call{value: p.amount}("");
+        require(success, "Transfer failed");
+
+        emit ProposalExecuted(p.id);
     }
 
     receive() external payable {
