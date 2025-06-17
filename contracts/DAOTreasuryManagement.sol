@@ -279,6 +279,16 @@ contract DAOTreasury {
         emit ProposalExecuted(p.id);
     }
 
+    /// @notice Returns a member's token balance and voting power
+    function getMemberInfo(address member)
+        external
+        view
+        returns (uint256 tokenBalance, uint256 votingPower)
+    {
+        tokenBalance = memberTokens[member];
+        votingPower = tokenBalance;
+    }
+
     receive() external payable {
         emit FundsDeposited(msg.sender, msg.value);
     }
