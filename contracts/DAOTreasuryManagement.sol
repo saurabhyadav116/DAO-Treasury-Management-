@@ -240,6 +240,51 @@ contract DAOTreasury {
         }
     }
 
+    /// ✅ New Function: Get all active proposals
+    function getActiveProposals()
+        external
+        view
+        returns (
+            uint256[] memory ids,
+            address[] memory proposers,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            string[] memory descriptions,
+            uint256[] memory deadlines
+        )
+    {
+        uint256 activeCount;
+
+        // Count active proposals
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage p = proposals[i];
+            if (!p.executed && !p.canceled && block.timestamp < p.deadline) {
+                activeCount++;
+            }
+        }
+
+        ids = new uint256[](activeCount);
+        proposers = new address[](activeCount);
+        recipients = new address[](activeCount);
+        amounts = new uint256[](activeCount);
+        descriptions = new string[](activeCount);
+        deadlines = new uint256[](activeCount);
+
+        uint256 index = 0;
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage p = proposals[i];
+            if (!p.executed && !p.canceled && block.timestamp < p.deadline) {
+                ids[index] = p.id;
+                proposers[index] = p.proposer;
+                recipients[index] = p.recipient;
+                amounts[index] = p.amount;
+                descriptions[index] = p.description;
+                deadlines[index] = p.deadline;
+                index++;
+            }
+        }
+    }
+
     function getUnallocatedFunds() public view returns (uint256) {
         uint256 committed;
 
