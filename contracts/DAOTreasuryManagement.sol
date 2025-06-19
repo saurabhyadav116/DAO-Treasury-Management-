@@ -285,6 +285,49 @@ contract DAOTreasury {
         }
     }
 
+    /// ✅ New Function: Get all executed proposals
+    function getExecutedProposals()
+        external
+        view
+        returns (
+            uint256[] memory ids,
+            address[] memory proposers,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            string[] memory descriptions,
+            uint256[] memory timestamps
+        )
+    {
+        uint256 executedCount;
+
+        for (uint256 i = 0; i < proposalCount; i++) {
+            if (proposals[i].executed) {
+                executedCount++;
+            }
+        }
+
+        ids = new uint256[](executedCount);
+        proposers = new address[](executedCount);
+        recipients = new address[](executedCount);
+        amounts = new uint256[](executedCount);
+        descriptions = new string[](executedCount);
+        timestamps = new uint256[](executedCount);
+
+        uint256 index = 0;
+        for (uint256 i = 0; i < proposalCount; i++) {
+            Proposal storage p = proposals[i];
+            if (p.executed) {
+                ids[index] = p.id;
+                proposers[index] = p.proposer;
+                recipients[index] = p.recipient;
+                amounts[index] = p.amount;
+                descriptions[index] = p.description;
+                timestamps[index] = p.deadline;
+                index++;
+            }
+        }
+    }
+
     function getUnallocatedFunds() public view returns (uint256) {
         uint256 committed;
 
