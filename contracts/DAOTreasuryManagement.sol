@@ -81,6 +81,7 @@ contract DAOTreasury {
         return id;
     }
 
+    /// ✅ Refactored `castVote` with supporting internal functions
     function castVote(uint256 proposalId, bool support)
         external
         onlyMember
@@ -88,24 +89,32 @@ contract DAOTreasury {
     {
         Proposal storage p = proposals[proposalId];
 
+        _validateVotingConditions(p);
+        _registerVote(p, support, msg.sender);
+
+        uint256 weight = memberTokens[msg.sender];
+        emit VoteCast(proposalId, msg.sender, support, weight);
+
+        if (_canExecute(p)) {
+            _executeProposal(p);
+        }
+    }
+
+    function _validateVotingConditions(Proposal storage p) internal view {
         require(!p.executed, "Already executed");
         require(!p.canceled, "Proposal canceled");
         require(block.timestamp < p.deadline, "Voting closed");
         require(!p.hasVoted[msg.sender], "Already voted");
+    }
 
-        p.hasVoted[msg.sender] = true;
-        uint256 weight = memberTokens[msg.sender];
+    function _registerVote(Proposal storage p, bool support, address voter) internal {
+        p.hasVoted[voter] = true;
+        uint256 weight = memberTokens[voter];
 
         if (support) {
             p.votesFor += weight;
         } else {
             p.votesAgainst += weight;
-        }
-
-        emit VoteCast(proposalId, msg.sender, support, weight);
-
-        if (_canExecute(p)) {
-            _executeProposal(p);
         }
     }
 
@@ -240,7 +249,6 @@ contract DAOTreasury {
         }
     }
 
-    /// ✅ New Function: Get all active proposals
     function getActiveProposals()
         external
         view
@@ -255,7 +263,6 @@ contract DAOTreasury {
     {
         uint256 activeCount;
 
-        // Count active proposals
         for (uint256 i = 0; i < proposalCount; i++) {
             Proposal storage p = proposals[i];
             if (!p.executed && !p.canceled && block.timestamp < p.deadline) {
@@ -285,7 +292,6 @@ contract DAOTreasury {
         }
     }
 
-    /// ✅ New Function: Get all executed proposals
     function getExecutedProposals()
         external
         view
@@ -367,7 +373,6 @@ contract DAOTreasury {
         emit ProposalExecuted(p.id);
     }
 
-    /// @notice Returns a member's token balance and voting power
     function getMemberInfo(address member)
         external
         view
