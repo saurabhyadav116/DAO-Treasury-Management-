@@ -81,7 +81,6 @@ contract DAOTreasury {
         return id;
     }
 
-    /// ✅ Refactored `castVote` with supporting internal functions
     function castVote(uint256 proposalId, bool support)
         external
         onlyMember
@@ -262,10 +261,8 @@ contract DAOTreasury {
         )
     {
         uint256 activeCount;
-
         for (uint256 i = 0; i < proposalCount; i++) {
-            Proposal storage p = proposals[i];
-            if (!p.executed && !p.canceled && block.timestamp < p.deadline) {
+            if (_isActive(proposals[i])) {
                 activeCount++;
             }
         }
@@ -280,7 +277,7 @@ contract DAOTreasury {
         uint256 index = 0;
         for (uint256 i = 0; i < proposalCount; i++) {
             Proposal storage p = proposals[i];
-            if (!p.executed && !p.canceled && block.timestamp < p.deadline) {
+            if (_isActive(p)) {
                 ids[index] = p.id;
                 proposers[index] = p.proposer;
                 recipients[index] = p.recipient;
@@ -290,6 +287,10 @@ contract DAOTreasury {
                 index++;
             }
         }
+    }
+
+    function _isActive(Proposal storage p) private view returns (bool) {
+        return !p.executed && !p.canceled && block.timestamp < p.deadline;
     }
 
     function getExecutedProposals()
