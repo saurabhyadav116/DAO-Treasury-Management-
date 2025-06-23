@@ -28,7 +28,6 @@ contract DAOTreasury {
     mapping(uint256 => mapping(address => bool)) public hasVoted;
     mapping(address => uint256) public memberTokens;
 
-    // Events
     event ProposalCreated(uint256 indexed id, address indexed proposer, address indexed recipient, uint256 amount, string description);
     event VoteCast(uint256 indexed proposalId, address indexed voter, bool support, uint256 weight);
     event ProposalExecuted(uint256 indexed proposalId);
@@ -36,7 +35,6 @@ contract DAOTreasury {
     event MemberUpdated(address indexed member, uint256 tokens);
     event FundsDeposited(address indexed from, uint256 amount);
 
-    // Modifiers
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin");
         _;
@@ -57,47 +55,43 @@ contract DAOTreasury {
         admin = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
-
         _updateMember(admin, 1);
     }
 
-    // ========== Proposal Creation ==========
-
     function createProposal(address payable recipient, uint256 amount, string calldata description)
-        external
-        onlyMember
-        returns (uint256)
+        external onlyMember returns (uint256)
     {
         require(amount <= address(this).balance, "Insufficient balance");
         require(recipient != address(0), "Invalid recipient");
 
         uint256 id = proposalCount++;
-        ProposalCore storage p = proposals[id];
-
-        p.id = id;
-        p.proposer = msg.sender;
-        p.recipient = recipient;
-        p.amount = amount;
-        p.description = description;
-        p.deadline = block.timestamp + votingPeriod;
+        proposals[id] = ProposalCore({
+            id: id,
+            proposer: msg.sender,
+            recipient: recipient,
+            amount: amount,
+            description: description,
+            votesFor: 0,
+            votesAgainst: 0,
+            executed: false,
+            canceled: false,
+            deadline: block.timestamp + votingPeriod
+        });
 
         emit ProposalCreated(id, msg.sender, recipient, amount, description);
         return id;
     }
 
-    // ========== Voting ==========
-
     function castVote(uint256 proposalId, bool support)
-        external
-        onlyMember
-        validProposal(proposalId)
+        external onlyMember validProposal(proposalId)
     {
         ProposalCore storage p = proposals[proposalId];
+        require(!p.executed && !p.canceled && block.timestamp < p.deadline, "Voting closed or invalid");
+        require(!hasVoted[proposalId][msg.sender], "Already voted");
 
-        _validateVoting(p);
         hasVoted[proposalId][msg.sender] = true;
-
         uint256 weight = memberTokens[msg.sender];
+
         if (support) {
             p.votesFor += weight;
         } else {
@@ -106,19 +100,8 @@ contract DAOTreasury {
 
         emit VoteCast(proposalId, msg.sender, support, weight);
 
-        if (_canExecute(p)) {
-            _executeProposal(p);
-        }
+        if (_canExecute(p)) _executeProposal(p);
     }
-
-    function _validateVoting(ProposalCore storage p) private view {
-        require(!p.executed, "Already executed");
-        require(!p.canceled, "Proposal canceled");
-        require(block.timestamp < p.deadline, "Voting closed");
-        require(!hasVoted[p.id][msg.sender], "Already voted");
-    }
-
-    // ========== Execution and Cancellation ==========
 
     function executeProposal(uint256 proposalId) external validProposal(proposalId) {
         ProposalCore storage p = proposals[proposalId];
@@ -128,9 +111,7 @@ contract DAOTreasury {
 
     function cancelProposal(uint256 proposalId) external validProposal(proposalId) {
         ProposalCore storage p = proposals[proposalId];
-
-        require(!p.executed, "Already executed");
-        require(!p.canceled, "Already canceled");
+        require(!p.executed && !p.canceled, "Already finalized");
         require(msg.sender == p.proposer || msg.sender == admin, "Unauthorized");
 
         p.canceled = true;
@@ -139,22 +120,16 @@ contract DAOTreasury {
 
     function _canExecute(ProposalCore storage p) private view returns (bool) {
         if (p.executed || p.canceled || block.timestamp < p.deadline) return false;
-
         uint256 totalVotes = p.votesFor + p.votesAgainst;
-        bool quorumReached = (totalVotes * 100) / totalTokens >= quorum;
-
-        return quorumReached && p.votesFor > p.votesAgainst;
+        return (totalVotes * 100 / totalTokens >= quorum) && (p.votesFor > p.votesAgainst);
     }
 
     function _executeProposal(ProposalCore storage p) private {
         p.executed = true;
         (bool success, ) = p.recipient.call{value: p.amount}("");
         require(success, "Transfer failed");
-
         emit ProposalExecuted(p.id);
     }
-
-    // ========== Admin Controls ==========
 
     function updateMember(address member, uint256 tokens) external onlyAdmin {
         require(member != address(0), "Invalid address");
@@ -164,7 +139,6 @@ contract DAOTreasury {
     function withdrawUnallocatedFunds(address payable to, uint256 amount) external onlyAdmin {
         require(to != address(0), "Invalid address");
         require(amount <= getUnallocatedFunds(), "Insufficient unallocated funds");
-
         (bool success, ) = to.call{value: amount}("");
         require(success, "Transfer failed");
     }
@@ -173,18 +147,10 @@ contract DAOTreasury {
         uint256 current = memberTokens[member];
         memberTokens[member] = tokens;
         totalTokens = totalTokens - current + tokens;
-
         emit MemberUpdated(member, tokens);
     }
 
-    // ========== View Helpers ==========
-
-    function getProposalStatus(uint256 proposalId)
-        public
-        view
-        validProposal(proposalId)
-        returns (ProposalStatus)
-    {
+    function getProposalStatus(uint256 proposalId) public view validProposal(proposalId) returns (ProposalStatus) {
         ProposalCore storage p = proposals[proposalId];
         if (p.canceled) return ProposalStatus.Canceled;
         if (p.executed) return ProposalStatus.Passed;
@@ -198,98 +164,29 @@ contract DAOTreasury {
             : ProposalStatus.Failed;
     }
 
-    function canExecute(uint256 proposalId)
-        external
-        view
-        validProposal(proposalId)
-        returns (bool)
-    {
-        return _canExecute(proposals[proposalId]);
-    }
-
-    function getProposalInfo(uint256 proposalId)
-        external
-        view
-        validProposal(proposalId)
-        returns (
-            address proposer,
-            address recipient,
-            uint256 amount,
-            string memory description,
-            uint256 votesFor,
-            uint256 votesAgainst,
-            bool executed,
-            uint256 deadline,
-            bool canceled
-        )
-    {
-        ProposalCore storage p = proposals[proposalId];
-        return (
-            p.proposer,
-            p.recipient,
-            p.amount,
-            p.description,
-            p.votesFor,
-            p.votesAgainst,
-            p.executed,
-            p.deadline,
-            p.canceled
-        );
-    }
-
-    function getHasVoted(uint256 proposalId, address voter)
-        external
-        view
-        validProposal(proposalId)
-        returns (bool)
-    {
-        return hasVoted[proposalId][voter];
-    }
-
-    function getAllProposals() external view returns (
-        ProposalCore[] memory allProposals,
-        ProposalStatus[] memory statuses
-    ) {
+    function getAllProposals() external view returns (ProposalCore[] memory all, ProposalStatus[] memory statuses) {
         uint256 count = proposalCount;
-        allProposals = new ProposalCore[](count);
+        all = new ProposalCore[](count);
         statuses = new ProposalStatus[](count);
-
         for (uint256 i; i < count; ++i) {
-            allProposals[i] = proposals[i];
+            all[i] = proposals[i];
             statuses[i] = getProposalStatus(i);
         }
     }
 
-    function getActiveProposals() external view returns (ProposalCore[] memory activeProposals) {
+    function getProposalsByStatus(bool activeOnly, bool executedOnly) external view returns (ProposalCore[] memory filtered) {
         uint256 count;
-
         for (uint256 i; i < proposalCount; ++i) {
-            if (_isActive(proposals[i])) count++;
+            ProposalCore storage p = proposals[i];
+            if ((activeOnly && _isActive(p)) || (executedOnly && p.executed)) count++;
         }
 
-        activeProposals = new ProposalCore[](count);
+        filtered = new ProposalCore[](count);
         uint256 index;
-
         for (uint256 i; i < proposalCount; ++i) {
-            if (_isActive(proposals[i])) {
-                activeProposals[index++] = proposals[i];
-            }
-        }
-    }
-
-    function getExecutedProposals() external view returns (ProposalCore[] memory executedProposals) {
-        uint256 count;
-
-        for (uint256 i; i < proposalCount; ++i) {
-            if (proposals[i].executed) count++;
-        }
-
-        executedProposals = new ProposalCore[](count);
-        uint256 index;
-
-        for (uint256 i; i < proposalCount; ++i) {
-            if (proposals[i].executed) {
-                executedProposals[index++] = proposals[i];
+            ProposalCore storage p = proposals[i];
+            if ((activeOnly && _isActive(p)) || (executedOnly && p.executed)) {
+                filtered[index++] = p;
             }
         }
     }
@@ -298,26 +195,33 @@ contract DAOTreasury {
         return !p.executed && !p.canceled && block.timestamp < p.deadline;
     }
 
-    function getUnallocatedFunds() public view returns (uint256) {
-        uint256 committed;
-
+    function getUnallocatedFunds() public view returns (uint256 unallocated) {
         for (uint256 i; i < proposalCount; ++i) {
             ProposalCore storage p = proposals[i];
             if (!p.executed && !p.canceled) {
-                committed += p.amount;
+                unallocated += p.amount;
             }
         }
-
-        return address(this).balance - committed;
+        return address(this).balance - unallocated;
     }
 
-    function getMemberInfo(address member)
-        external
-        view
-        returns (uint256 tokenBalance, uint256 votingPower)
-    {
+    function getMemberInfo(address member) external view returns (uint256 tokenBalance, uint256 votingPower) {
         tokenBalance = memberTokens[member];
         votingPower = tokenBalance;
+    }
+
+    function getProposalInfo(uint256 proposalId) external view validProposal(proposalId)
+        returns (address, address, uint256, string memory, uint256, uint256, bool, uint256, bool)
+    {
+        ProposalCore storage p = proposals[proposalId];
+        return (
+            p.proposer, p.recipient, p.amount, p.description,
+            p.votesFor, p.votesAgainst, p.executed, p.deadline, p.canceled
+        );
+    }
+
+    function getHasVoted(uint256 proposalId, address voter) external view validProposal(proposalId) returns (bool) {
+        return hasVoted[proposalId][voter];
     }
 
     receive() external payable {
