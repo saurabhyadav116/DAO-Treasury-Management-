@@ -224,6 +224,26 @@ contract DAOTreasury {
         return hasVoted[proposalId][voter];
     }
 
+    /// 🔹 New function: Get proposals submitted by a specific member
+    function getMemberProposals(address member) external view returns (uint256[] memory) {
+        uint256 count;
+        for (uint256 i = 0; i < proposalCount; ++i) {
+            if (proposals[i].proposer == member) {
+                count++;
+            }
+        }
+
+        uint256[] memory memberProposals = new uint256[](count);
+        uint256 index;
+        for (uint256 i = 0; i < proposalCount; ++i) {
+            if (proposals[i].proposer == member) {
+                memberProposals[index++] = i;
+            }
+        }
+
+        return memberProposals;
+    }
+
     receive() external payable {
         emit FundsDeposited(msg.sender, msg.value);
     }
